@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<title>Twitch Slow Mode Analyzer</title>
+<meta name="description" content="See how many messages would have been blocked with a higher slow mode." />
+<p>Shows how many messages would have been blocked with each slow mode. Note that it can't track how many have actually been blocked, so rows with smaller duration than the current slow mode will not populate.</p>
+<p>This page does not support Internet Explorer, Safari 10 or below, iOS Safari or Opera Mini.</p>
+<p>Current slow: <span id="current">N/A</span></p>
+<input id="channel" name="channel" type="text" placeholder="channel" /><button id="connect">Start</button><button id="reset">Reset stats</button>
+<table>
+	<thead>
+		<tr>
+			<th>Slow amount</th>
+			<th>Would-be blocked messages</th>
+		</tr>
+	</thead>
+	<tbody id="table">
+	</tbody>
+</table>
+<script src="/static/ircparser.js"></script>
+<script>
+var stats = {};
+var statcells = [];
+
+function resetStats() {
+	for (var i = 0; i < statcells.length; i += 1) {
+		statcells[i].textContent = '0';
+	}
+	stats = {};
+}
+
+function connectToChannel(channel) {
+	var ws = new WebSocket('wss://irc-ws.chat.twitch.tv');
+	ws.onerror = function (e) {
+		console.error(e);
+	}
+	ws.onopen = function (e) {
+		ws.send('CAP REQ :twitch.tv/commands twitch.tv/tags\r\n');
+		ws.send('NICK justinfan1\r\n');
+		ws.send('JOIN #' + channel + '\r\n');
+	}
+	ws.onmessage = function (e) {
+		var data = parse(e.data);
+		switch (data.command) {
+			case 'ROOMSTATE':
+				document.getElementById('current').textContent = data.tags.slow;
+				break;
+			case 'PRIVMSG':
+				if (data.tags['user-type'].length > 0) {
+					break;
+				}
+				var user = data.prefix.split('!')[0];
+				if (user === channel) {
+					break;
+				}
+				if (stats[user]) {
+					var diffIn10Sec = Math.ceil((Date.now() - stats[user]) / 10000);
+					for (var i = diffIn10Sec; i <= 42; i += 1) {
+						var cell = document.getElementById('slow-' + i);
+						cell.textContent = parseInt(cell.textContent) + 1;
+					}
+				}
+				stats[user] = Date.now();
+				break;
+			case 'PING':
+				ws.send('PONG\r\n');
+				break;
+		}
+	}
+	ws.onclose = function (e) {
+		connectToChannel(channel);
+	}
+}
+
+(function () {
+	var table = document.getElementById('table');
+	for (var i = 42; i > 0; i -= 1) {
+		var row = document.createElement('tr');
+		var slowcell = document.createElement('td');
+		var statcell = document.createElement('td');
+		slowcell.textContent = i * 10;
+		statcell.textContent = '0';
+		statcell.id = 'slow-' + i;
+		statcells.push(statcell);
+		row.appendChild(slowcell);
+		row.appendChild(statcell);
+		table.appendChild(row);
+	}
+
+	var channelInput = document.getElementById('channel');
+	var connectButton = document.getElementById('connect');
+	var resetButton = document.getElementById('reset');
+	channelInput.value = window.location.search.substring(1);
+	connectButton.onclick = function () {
+		if (/^\w+$/.test(channelInput.value)) {
+			connectToChannel(channelInput.value);
+			connectButton.setAttribute('disabled', 'disabled');
+		} else {
+			alert('Invalid channel');
+		}
+	}
+	resetButton.onclick = resetStats;
+})();
+</script>
