@@ -4,12 +4,14 @@
 <p>Shows how many messages would have been blocked with each slow mode. Note that it can't track how many have actually been blocked, so rows with smaller duration than the current slow mode will not populate.</p>
 <p>This page does not support Internet Explorer, Safari 10 or below, iOS Safari or Opera Mini.</p>
 <p>Current slow: <span id="current">N/A</span></p>
+<p><span id="chatters">N/A</span> people have chatted; <span id="chatters-unique">N/A</span> only talked once!</p>
 <input id="channel" name="channel" type="text" placeholder="channel" /><button id="connect">Start</button><button id="reset">Reset stats</button>
 <table>
 	<thead>
 		<tr>
 			<th>Slow amount</th>
 			<th>Would-be blocked messages</th>
+			<th>Would-be slowdown %</th>
 		</tr>
 	</thead>
 	<tbody id="table">
@@ -18,13 +20,17 @@
 <script src="/static/ircparser.js"></script>
 <script>
 var stats = {};
+var nonunique = 0;
 var statcells = [];
+var perccells = [];
+var messagetotal = 0;
 
 function resetStats() {
 	for (var i = 0; i < statcells.length; i += 1) {
 		statcells[i].textContent = '0';
 	}
 	stats = {};
+	nonunique = 0;
 }
 
 function connectToChannel(channel) {
@@ -51,14 +57,28 @@ function connectToChannel(channel) {
 				if (user === channel) {
 					break;
 				}
+				var chatted = 0;
 				if (stats[user]) {
-					var diffIn10Sec = Math.ceil((Date.now() - stats[user]) / 10000);
+					chatted = stats[user].chatted;
+					var diffIn10Sec = Math.ceil((Date.now() - stats[user].time) / 10000);
 					for (var i = diffIn10Sec; i <= 42; i += 1) {
 						var cell = document.getElementById('slow-' + i);
 						cell.textContent = parseInt(cell.textContent) + 1;
 					}
+					if (stats[user].chatted === 1) {
+						nonunique += 1;
+					}
 				}
-				stats[user] = Date.now();
+				stats[user] = {
+					time: Date.now(),
+					chatted: chatted + 1
+				}
+				document.getElementById('chatters').textContent = Object.keys(stats).length;
+				document.getElementById('chatters-unique').textContent = Object.keys(stats).length - nonunique;
+				messagetotal += 1;
+				for (var i = 0; i < perccells.length; i += 1) {
+					perccells[i].textContent = (parseInt(statcells[i].textContent) / messagetotal * 100).toFixed(1) + '%';
+				}
 				break;
 			case 'PING':
 				ws.send('PONG\r\n');
@@ -76,12 +96,16 @@ function connectToChannel(channel) {
 		var row = document.createElement('tr');
 		var slowcell = document.createElement('td');
 		var statcell = document.createElement('td');
+		var perccell = document.createElement('td');
 		slowcell.textContent = i * 10;
 		statcell.textContent = '0';
 		statcell.id = 'slow-' + i;
+		perccell.id = 'perc-' + i;
+		perccells.push(perccell);
 		statcells.push(statcell);
 		row.appendChild(slowcell);
 		row.appendChild(statcell);
+		row.appendChild(perccell);
 		table.appendChild(row);
 	}
 
